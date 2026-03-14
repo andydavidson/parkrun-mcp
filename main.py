@@ -38,5 +38,46 @@ async def get_athlete_results(athlete_number: str) -> str:
 
         return json.dumps(rows, indent=2)
 
+@mcp.tool()
+async def get_events(country_code: int | None = None) -> str:
+    """Get parkrun events, optionally filtered by country code.
+    
+    Common country codes: 97=UK, 3=Australia, 14=Canada, 23=Denmark, 
+    30=Finland, 32=France, 33=Germany, 44=Ireland, 57=Italy, 
+    67=Netherlands, 74=New Zealand, 82=Poland, 85=South Africa, 
+    90=Sweden, 98=USA, 103=Zimbabwe
+    """
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://images.parkrun.com/events.json",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+        events = data["events"]["features"]
+
+        if country_code is not None:
+            events = [e for e in events if e["properties"]["countrycode"] == country_code]
+
+        slim = []
+        for e in events:
+            p = e["properties"]
+            obj = {
+                "id": e["id"],
+                "name": p["eventname"],
+                "short": p["EventShortName"],
+                "coords": e["geometry"]["coordinates"],
+            }
+            if country_code is None:
+                obj["country"] = p["countrycode"]
+            location = p.get("EventLocation")
+            if location and location != p["EventShortName"]:
+                obj["location"] = location
+            slim.append(obj)
+
+        return json.dumps(slim)
+
 if __name__ == "__main__":
     mcp.run()
