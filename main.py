@@ -1,10 +1,39 @@
 import httpx
 import json
+import csv
+import io
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("parkrun")
+async def fetch_course_data() -> dict:
+    """Fetch WSW course terrain data, keyed by short name."""
+    url = "https://docs.google.com/spreadsheets/d/1mveju_0L4jnvdkvL50ALM4wnMDmyZ6hgQ-LEWAfvA9E/export?format=csv"
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+        }, follow_redirects=True)
+        response.raise_for_status()
 
+    lookup = {}
+    reader = csv.DictReader(io.StringIO(response.text))
+    for row in reader:
+        full_name = row.get("parkrun full name", "")
+        short = full_name.replace(" parkrun", "").strip()
+        lookup[short] = {
+            k: v for k, v in row.items()
+            if k in ("laps", "terrain", "#WhatShoes?", "comments") and v
+        }
+    return lookup
+
+course_data: dict | None = None
+async def get_course_data() -> dict:
+    global course_data
+    if course_data is None:
+        course_data = await fetch_course_data()
+    return course_data
+
+
+mcp = FastMCP("parkrun")
 
 @mcp.tool()
 async def get_athlete_results(athlete_number: str) -> str:
@@ -78,6 +107,12 @@ async def get_events(country_code: int | None = None) -> str:
             if location and location != p["EventShortName"]:
                 obj["location"] = location
             slim.append(obj)
+
+            cd = await get_course_data()
+            terrain = cd.get(p["EventShortName"])
+            if terrain:
+                obj["terrain"] = terrain
+
 
         return json.dumps(slim)
 
