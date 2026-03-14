@@ -59,7 +59,9 @@ async def get_events(country_code: int | None = None) -> str:
         events = data["events"]["features"]
 
         if country_code is not None:
-            events = [e for e in events if e["properties"]["countrycode"] == country_code]
+            events = [e for e in events if e["properties"]["countrycode"] == country_code and e["properties"]["seriesid"] == 1]
+        else:
+            events = [e for e in events if e["properties"]["seriesid"] == 1]
 
         slim = []
         for e in events:
