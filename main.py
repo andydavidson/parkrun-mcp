@@ -2,6 +2,7 @@ import httpx
 import json
 import csv
 import io
+import math
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 
@@ -67,14 +68,30 @@ async def get_athlete_results(athlete_number: str) -> str:
 
         return json.dumps(rows, indent=2)
 
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
+
+
 @mcp.tool()
-async def get_events(country_code: int | None = None) -> str:
-    """Get parkrun events, optionally filtered by country code.
-    
-    Common country codes: 97=UK, 3=Australia, 14=Canada, 23=Denmark, 
-    30=Finland, 32=France, 33=Germany, 44=Ireland, 57=Italy, 
-    67=Netherlands, 74=New Zealand, 82=Poland, 85=South Africa, 
+async def get_events(
+    country_code: int | None = None,
+    latitude: float | None = None,
+    longitude: float | None = None,
+    limit: int | None = None,
+) -> str:
+    """Get parkrun events, optionally filtered by country code and/or sorted by proximity to a location.
+
+    Common country codes: 97=UK, 3=Australia, 14=Canada, 23=Denmark,
+    30=Finland, 32=France, 33=Germany, 44=Ireland, 57=Italy,
+    67=Netherlands, 74=New Zealand, 82=Poland, 85=South Africa,
     90=Sweden, 98=USA, 103=Zimbabwe
+
+    If latitude and longitude are provided, events are sorted by distance from that point
+    and each result includes a distance_km field. Use limit to return only the nearest N events.
     """
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -92,27 +109,36 @@ async def get_events(country_code: int | None = None) -> str:
         else:
             events = [e for e in events if e["properties"]["seriesid"] == 1]
 
+        use_proximity = latitude is not None and longitude is not None
+
+        cd = await get_course_data()
         slim = []
         for e in events:
             p = e["properties"]
+            coords = e["geometry"]["coordinates"]  # [lon, lat]
             obj = {
                 "id": e["id"],
                 "name": p["eventname"],
                 "short": p["EventShortName"],
-                "coords": e["geometry"]["coordinates"],
+                "coords": coords,
             }
             if country_code is None:
                 obj["country"] = p["countrycode"]
             location = p.get("EventLocation")
             if location and location != p["EventShortName"]:
                 obj["location"] = location
-            slim.append(obj)
-
-            cd = await get_course_data()
             terrain = cd.get(p["EventShortName"])
             if terrain:
                 obj["terrain"] = terrain
+            if use_proximity:
+                obj["distance_km"] = round(_haversine_km(latitude, longitude, coords[1], coords[0]), 1)
+            slim.append(obj)
 
+        if use_proximity:
+            slim.sort(key=lambda x: x["distance_km"])
+
+        if limit is not None:
+            slim = slim[:limit]
 
         return json.dumps(slim)
 
