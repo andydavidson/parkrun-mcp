@@ -143,4 +143,14 @@ async def get_events(
         return json.dumps(slim)
 
 if __name__ == "__main__":
-    mcp.run()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--http", action="store_true", help="Run as HTTP server (for Claude web / remote MCP)")
+    parser.add_argument("--port", type=int, default=8000, help="Port to listen on (default: 8000)")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+    args = parser.parse_args()
+
+    if args.http:
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        mcp.run(transport="stdio")
