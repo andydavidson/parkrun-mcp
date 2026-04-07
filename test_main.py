@@ -1,9 +1,15 @@
 """Tests for parkrun MCP server."""
-import json
+import csv
+import io
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import main
+
+
+def from_toon(text: str) -> list[dict]:
+    """Parse TOON tabular format back into a list of dicts."""
+    return list(csv.DictReader(io.StringIO(text)))
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +193,7 @@ async def test_get_athlete_results_parses_table():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_athlete_results("12345")
 
-    rows = json.loads(result)
+    rows = from_toon(result)
     assert len(rows) == 2
     assert rows[0] == {"Run Date": "01/01/2024", "Event": "Bushy", "Time": "20:01"}
     assert rows[1]["Time"] == "19:45"
@@ -259,7 +265,7 @@ async def test_get_events_excludes_junior_parkruns():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events()
 
-    events = json.loads(result)
+    events = from_toon(result)
     names = [e["name"] for e in events]
     assert "Bushy junior parkrun" not in names
 
@@ -270,8 +276,8 @@ async def test_get_events_filters_by_country_code():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events(country_code=97)
 
-    events = json.loads(result)
-    assert all(e.get("country") is None for e in events)  # country field omitted when filtered
+    events = from_toon(result)
+    assert all(not e.get("country") for e in events)  # country column absent when filtered
     names = [e["name"] for e in events]
     assert "Sydney parkrun" not in names
     assert "Bushy parkrun" in names
@@ -283,8 +289,8 @@ async def test_get_events_includes_country_when_no_filter():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events()
 
-    events = json.loads(result)
-    assert all("country" in e for e in events)
+    events = from_toon(result)
+    assert all(e.get("country") for e in events)
 
 
 @pytest.mark.asyncio
@@ -293,9 +299,9 @@ async def test_get_events_omits_location_when_same_as_short_name():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events(country_code=97)
 
-    events = json.loads(result)
+    events = from_toon(result)
     victoria_dock = next(e for e in events if e["name"] == "Victoria Dock parkrun")
-    assert "location" not in victoria_dock
+    assert not victoria_dock.get("location")  # absent or empty when same as short name
 
 
 @pytest.mark.asyncio
@@ -304,7 +310,7 @@ async def test_get_events_includes_location_when_different():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events(country_code=97)
 
-    events = json.loads(result)
+    events = from_toon(result)
     bushy = next(e for e in events if e["name"] == "Bushy parkrun")
     assert bushy["location"] == "Bushy Park"
 
@@ -315,10 +321,10 @@ async def test_get_events_merges_terrain_data():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events(country_code=97)
 
-    events = json.loads(result)
+    events = from_toon(result)
     bushy = next(e for e in events if e["name"] == "Bushy parkrun")
-    assert "terrain" in bushy
-    assert bushy["terrain"]["terrain"] == "mixed"
+    assert bushy.get("terrain_terrain")
+    assert bushy["terrain_terrain"] == "mixed"
 
 
 @pytest.mark.asyncio
@@ -327,9 +333,9 @@ async def test_get_events_no_terrain_when_not_in_spreadsheet():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events(country_code=3)  # Australia / Sydney
 
-    events = json.loads(result)
+    events = from_toon(result)
     sydney = next(e for e in events if e["name"] == "Sydney parkrun")
-    assert "terrain" not in sydney
+    assert not sydney.get("terrain_terrain")
 
 
 @pytest.mark.asyncio
@@ -338,9 +344,10 @@ async def test_get_events_result_has_required_fields():
     with patch("httpx.AsyncClient", return_value=mock_client):
         result = await main.get_events(country_code=97)
 
-    events = json.loads(result)
+    events = from_toon(result)
     for event in events:
         assert "id" in event
         assert "name" in event
         assert "short" in event
-        assert "coords" in event
+        assert "lon" in event
+        assert "lat" in event

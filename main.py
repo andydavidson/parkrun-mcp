@@ -1,10 +1,26 @@
 import httpx
-import json
 import csv
 import io
 import math
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
+
+
+def to_toon(records: list[dict]) -> str:
+    """Serialize a list of dicts to compact tabular TOON format.
+
+    Outputs one header line followed by one CSV row per record.
+    Key names appear only once, saving significant tokens vs JSON.
+    """
+    if not records:
+        return ""
+    keys = list(dict.fromkeys(k for r in records for k in r.keys()))
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(keys)
+    for r in records:
+        writer.writerow([r.get(k, "") for k in keys])
+    return buf.getvalue().rstrip("\r\n")
 
 async def fetch_course_data() -> dict:
     """Fetch WSW course terrain data, keyed by short name."""
@@ -38,7 +54,10 @@ mcp = FastMCP("parkrun")
 
 @mcp.tool()
 async def get_athlete_results(athlete_number: str) -> str:
-    """Get parkrun results history for a given athlete ID number."""
+    """Get parkrun results history for a given athlete ID number.
+
+    Returns results in TOON tabular format: first line is column headers, remaining lines are CSV rows.
+    """
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"https://www.parkrun.org.uk/parkrunner/{athlete_number}/all/",
@@ -66,7 +85,7 @@ async def get_athlete_results(athlete_number: str) -> str:
                 row = dict(zip(headers, cells))
                 rows.append(row)
 
-        return json.dumps(rows, indent=2)
+        return to_toon(rows)
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371.0
@@ -92,6 +111,8 @@ async def get_events(
 
     If latitude and longitude are provided, events are sorted by distance from that point
     and each result includes a distance_km field. Use limit to return only the nearest N events.
+
+    Returns results in TOON tabular format: first line is column headers, remaining lines are CSV rows.
     """
     async with httpx.AsyncClient() as client:
         response = await client.get(
@@ -120,7 +141,8 @@ async def get_events(
                 "id": e["id"],
                 "name": p["eventname"],
                 "short": p["EventShortName"],
-                "coords": coords,
+                "lon": coords[0],
+                "lat": coords[1],
             }
             if country_code is None:
                 obj["country"] = p["countrycode"]
@@ -129,7 +151,8 @@ async def get_events(
                 obj["location"] = location
             terrain = cd.get(p["EventShortName"])
             if terrain:
-                obj["terrain"] = terrain
+                for k, v in terrain.items():
+                    obj[f"terrain_{k}"] = v
             if use_proximity:
                 obj["distance_km"] = round(_haversine_km(latitude, longitude, coords[1], coords[0]), 1)
             slim.append(obj)
@@ -140,7 +163,7 @@ async def get_events(
         if limit is not None:
             slim = slim[:limit]
 
-        return json.dumps(slim)
+        return to_toon(slim)
 
 if __name__ == "__main__":
     import argparse
