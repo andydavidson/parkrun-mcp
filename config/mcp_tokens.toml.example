@@ -1,0 +1,13 @@
+# config/mcp_tokens.toml
+# Copy this file to mcp_tokens.toml (same directory) and replace the placeholder tokens.
+# Generate a token with: python -c "import secrets; print(secrets.token_hex(32))"
+#
+# mcp_tokens.toml is gitignored — never commit real tokens.
+
+[users.alice]
+token       = "aaaa000000000000000000000000000000000000000000000000000000001111"
+description = "Alice Smith"
+
+[users.bob]
+token       = "bbbb000000000000000000000000000000000000000000000000000000002222"
+description = "Bob Jones"
