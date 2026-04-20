@@ -153,7 +153,7 @@ async def test_fetch_course_data_strips_parkrun_suffix():
 @pytest.mark.asyncio
 async def test_get_course_data_caches_result():
     """fetch_course_data should only be called once even if get_course_data is awaited twice."""
-    queries._course_data = None
+    queries._course_cache._store.clear()
 
     response = make_response(text=SAMPLE_CSV)
     mock_client = AsyncMock()
@@ -167,8 +167,6 @@ async def test_get_course_data_caches_result():
 
     assert first is second
     assert mock_client.get.call_count == 1
-
-    queries._course_data = None  # clean up
 
 
 # ---------------------------------------------------------------------------
@@ -227,11 +225,15 @@ async def test_fetch_athlete_results_no_table():
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def reset_course_cache():
-    """Ensure _course_data cache is clear before each test."""
-    queries._course_data = None
+def reset_caches():
+    """Clear all caches before and after each test."""
+    queries._course_cache._store.clear()
+    queries._athlete_cache._store.clear()
+    queries._events_cache._store.clear()
     yield
-    queries._course_data = None
+    queries._course_cache._store.clear()
+    queries._athlete_cache._store.clear()
+    queries._events_cache._store.clear()
 
 
 def _make_events_mock(course_text=SAMPLE_CSV, events_json=SAMPLE_EVENTS_JSON):

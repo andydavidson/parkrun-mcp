@@ -2,6 +2,8 @@ from __future__ import annotations
 import csv
 import io
 import math
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from bs4 import BeautifulSoup
 import httpx
@@ -10,6 +12,40 @@ _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_4) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
 )
+
+
+def _cache_ttl() -> timedelta:
+    """15 minutes on Saturdays (parkrun day), 6 hours otherwise."""
+    if datetime.now(tz=timezone.utc).weekday() == 5:  # 5 = Saturday
+        return timedelta(minutes=15)
+    return timedelta(hours=6)
+
+
+class _Cache:
+    """Simple TTL cache keyed by an arbitrary hashable key."""
+
+    def __init__(self) -> None:
+        self._store: dict[Any, tuple[Any, datetime]] = {}
+
+    def get(self, key: Any) -> Any:
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        value, expires_at = entry
+        if datetime.now(tz=timezone.utc) >= expires_at:
+            del self._store[key]
+            return None
+        return value
+
+    def set(self, key: Any, value: Any) -> None:
+        self._store[key] = (value, datetime.now(tz=timezone.utc) + _cache_ttl())
+
+
+_athlete_cache = _Cache()
+_events_cache = _Cache()
+_course_cache = _Cache()
+
+_COURSE_KEY = "course_data"
 
 
 async def fetch_course_data() -> dict:
@@ -37,14 +73,13 @@ async def fetch_course_data() -> dict:
     return lookup
 
 
-_course_data: dict | None = None
-
-
 async def get_course_data() -> dict:
-    global _course_data
-    if _course_data is None:
-        _course_data = await fetch_course_data()
-    return _course_data
+    cached = _course_cache.get(_COURSE_KEY)
+    if cached is not None:
+        return cached
+    data = await fetch_course_data()
+    _course_cache.set(_COURSE_KEY, data)
+    return data
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -62,6 +97,10 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 async def fetch_athlete_results(athlete_number: str) -> list[dict]:
     """Return parsed results rows for the given athlete ID."""
+    cached = _athlete_cache.get(athlete_number)
+    if cached is not None:
+        return cached
+
     async with httpx.AsyncClient() as client:
         response = await client.get(
             f"https://www.parkrun.org.uk/parkrunner/{athlete_number}/all/",
@@ -90,6 +129,7 @@ async def fetch_athlete_results(athlete_number: str) -> list[dict]:
         if cells and headers:
             rows.append(dict(zip(headers, cells)))
 
+    _athlete_cache.set(athlete_number, rows)
     return rows
 
 
@@ -105,6 +145,11 @@ async def fetch_events(
     32=France, 33=Germany, 44=Ireland, 57=Italy, 67=Netherlands, 74=New Zealand,
     82=Poland, 85=South Africa, 90=Sweden, 98=USA, 103=Zimbabwe
     """
+    cache_key = (country_code, latitude, longitude, limit)
+    cached = _events_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://images.parkrun.com/events.json",
@@ -157,4 +202,5 @@ async def fetch_events(
     if limit is not None:
         slim = slim[:limit]
 
+    _events_cache.set(cache_key, slim)
     return slim
