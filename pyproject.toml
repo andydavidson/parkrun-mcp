@@ -1,13 +1,16 @@
 [project]
 name = "parkrun-mcp"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "parkrun MCP server — HTTP/SSE with OAuth 2.0 + PKCE"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.14.3",
     "httpx>=0.28.1",
     "mcp>=1.26.0",
+    "starlette>=0.40.0",
+    "tomli-w>=1.0.0",
+    "uvicorn>=0.30.0",
 ]
 
 [dependency-groups]
@@ -15,3 +18,6 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
