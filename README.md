@@ -36,14 +36,14 @@ The server reads tokens from `config/mcp_tokens.toml` at startup. You need this 
 ### Running locally
 
 ```bash
-uv run python -m parkrun_mcp               # binds to 127.0.0.1:8001
+uv run python -m parkrun_mcp               # binds to 127.0.0.1:8003
 uv run python -m parkrun_mcp --port 9000   # custom port
 ```
 
 Once running, test it directly:
 
 ```bash
-curl -s -H "Authorization: Bearer <your-token>" http://127.0.0.1:8001/
+curl -s -H "Authorization: Bearer <your-token>" http://127.0.0.1:8003/
 ```
 
 ---
@@ -94,7 +94,7 @@ ExecStart=/opt/parkrun-mcp/.venv/bin/uvicorn \
     parkrun_mcp.server:create_app \
     --factory \
     --host 127.0.0.1 \
-    --port 8001 \
+    --port 8003 \
     --workers 1
 
 Restart=on-failure
@@ -121,7 +121,7 @@ Add these blocks inside your `server {}` context (replace `yourdomain.com` as ne
 
 ```nginx
 upstream parkrun_mcp {
-    server 127.0.0.1:8001;
+    server 127.0.0.1:8003;
     keepalive 8;
 }
 
